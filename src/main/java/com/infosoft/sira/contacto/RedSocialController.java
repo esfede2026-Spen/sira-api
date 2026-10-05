@@ -1,0 +1,5 @@
+package com.infosoft.sira.contacto;
+import org.springframework.jdbc.core.JdbcTemplate;import org.springframework.web.bind.annotation.*;import java.util.*;
+@RestController @RequestMapping("/api/v1/personas/{personaId}/redes-sociales") public class RedSocialController{private final JdbcTemplate db;public RedSocialController(JdbcTemplate db){this.db=db;}
+@GetMapping public List<Map<String,Object>> get(@PathVariable long personaId){return db.queryForList("select id_persona_red,tipo,valor from sira.per_persona_red_social where id_persona=? and activo='S' order by tipo",personaId);}
+@PutMapping public Map<String,Object> put(@PathVariable long personaId,@RequestBody Map<String,Object> p){for(String tipo:List.of("FACEBOOK","INSTAGRAM","YOUTUBE","X")){String v=String.valueOf(p.getOrDefault(tipo.toLowerCase(),"")).trim();if(v.isBlank())db.update("update sira.per_persona_red_social set activo='N' where id_persona=? and tipo=?",personaId,tipo);else db.update("insert into sira.per_persona_red_social(id_persona,tipo,valor) values(?,?,?) on conflict(id_persona,tipo) do update set valor=excluded.valor,activo='S'",personaId,tipo,v);}return Map.of("guardado",true);}}

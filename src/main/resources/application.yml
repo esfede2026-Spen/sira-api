@@ -1,0 +1,25 @@
+server:
+  port: 8080
+  error:
+    include-message: always
+spring:
+  application:
+    name: sira-api
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USER}
+    password: ${DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 5
+      minimum-idle: 1
+      connection-timeout: 15000
+  jackson:
+    time-zone: America/Caracas
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+sira:
+  jwt-secret: ${JWT_SECRET}
+  admin-bootstrap-enabled: ${ADMIN_BOOTSTRAP_ENABLED:false}
+  cedula-api-enabled: ${CEDULA_API_ENABLED:false}

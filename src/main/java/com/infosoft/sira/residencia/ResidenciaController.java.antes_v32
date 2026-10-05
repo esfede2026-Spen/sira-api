@@ -1,0 +1,40 @@
+package com.infosoft.sira.residencia;
+
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.*;
+import java.util.*;
+
+@RestController
+@RequestMapping("/api/v1/personas/{personaId}/residencia")
+public class ResidenciaController {
+ private final JdbcTemplate db;
+ public ResidenciaController(JdbcTemplate db){this.db=db;}
+ @GetMapping("/principal")
+ public Map<String,Object> principal(@PathVariable long personaId){
+  var rows=db.queryForList("""
+   select r.*,p.desc_pais,e.desc_estado,c.desc_ciudad,m.desc_municipio,q.desc_parroquia,
+          s.desc_sector_geografico,cp.codigo_postal
+   from sira.per_persona_residencia r
+   join sira.pais p on p.id_pais=r.id_pais join sira.estado e on e.id_estado=r.id_estado
+   left join sira.ciudad c on c.id_ciudad=r.id_ciudad join sira.municipio m on m.id_municipio=r.id_municipio
+   join sira.parroquia q on q.id_parroquia=r.id_parroquia join sira.sector_geografico s on s.id_sector_geografico=r.id_sector_geografico
+   left join sira.codigo_postal cp on cp.id_codigo_postal=r.id_codigo_postal
+   where r.id_persona=? and r.principal='S' and r.activo='S' limit 1
+   """,personaId);
+  return rows.isEmpty()?Map.of("existe",false):new LinkedHashMap<>(){{put("existe",true);put("residencia",rows.get(0));}};
+ }
+ @PutMapping("/principal") @Transactional
+ public Map<String,Object> guardar(@PathVariable long personaId,@RequestBody Map<String,Object> p){
+  db.update("update sira.per_persona_residencia set activo='N',principal='N',fecha_hasta=current_date where id_persona=? and activo='S'",personaId);
+  Long id=db.queryForObject("""
+   insert into sira.per_persona_residencia(id_persona,id_pais,id_estado,id_ciudad,id_municipio,id_parroquia,id_sector_geografico,id_codigo_postal,direccion_complementaria,principal,activo)
+   values(?,?,?,?,?,?,?,?,?,'S','S') returning id_persona_residencia
+   """,Long.class,personaId,num(p,"paisId"),num(p,"estadoId"),nullable(p.get("ciudadId")),num(p,"municipioId"),num(p,"parroquiaId"),num(p,"sectorId"),nullable(p.get("codigoPostalId")),text(p.get("direccionComplementaria")));
+  db.update("update sira.per_persona set registro_fase1_completo='S' where id_persona=?",personaId);
+  return Map.of("idPersonaResidencia",Objects.requireNonNull(id),"fase1Completa",true);
+ }
+ private long num(Map<String,Object> p,String k){return Long.parseLong(String.valueOf(p.get(k)));}
+ private Long nullable(Object v){if(v==null||String.valueOf(v).isBlank())return null;return Long.parseLong(String.valueOf(v));}
+ private String text(Object v){return v==null?null:String.valueOf(v).trim();}
+}

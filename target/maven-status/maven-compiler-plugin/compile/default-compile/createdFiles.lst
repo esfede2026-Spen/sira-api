@@ -3,6 +3,7 @@ com\infosoft\sira\SiraApiApplication.class
 com\infosoft\sira\security\JwtService.class
 com\infosoft\sira\config\SecurityConfig.class
 com\infosoft\sira\common\ApiExceptionHandler.class
+com\infosoft\sira\electoral\ElectoralController$1.class
 com\infosoft\sira\invitacion\InvitacionController.class
 com\infosoft\sira\persona\PersonaRequest.class
 com\infosoft\sira\catalogo\CatalogoV4Controller.class
@@ -24,3 +25,4 @@ com\infosoft\sira\grupo\GrupoController.class
 com\infosoft\sira\contacto\RedSocialController.class
 com\infosoft\sira\persona\PersonaController.class
 com\infosoft\sira\usuario\UsuarioController.class
+com\infosoft\sira\electoral\ElectoralController$2.class

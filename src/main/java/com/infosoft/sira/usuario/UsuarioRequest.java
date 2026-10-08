@@ -1,3 +1,4 @@
 package com.infosoft.sira.usuario;
 import jakarta.validation.constraints.*;
-public record UsuarioRequest(@NotNull Long personaId,@NotBlank String username,@NotBlank @Email String correoAcceso,@NotBlank @Size(min=8) String password){}
+import java.util.List;
+public record UsuarioRequest(@NotNull Long personaId,@NotBlank String username,@Email String correoAcceso,String password,List<Long> roles,String estado,Boolean bloqueado){}

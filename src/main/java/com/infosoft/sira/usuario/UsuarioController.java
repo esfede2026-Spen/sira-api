@@ -1,60 +1,18 @@
 package com.infosoft.sira.usuario;
-
-import jakarta.validation.Valid;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
-
-@RestController
-@RequestMapping("/api/v1/usuarios")
-public class UsuarioController {
-
-    private final JdbcTemplate db;
-    private final PasswordEncoder passwordEncoder;
-
-    public UsuarioController(JdbcTemplate db, PasswordEncoder passwordEncoder) {
-        this.db = db;
-        this.passwordEncoder = passwordEncoder;
-    }
-
-    @GetMapping
-    public List<Map<String, Object>> listar() {
-        return db.queryForList(
-                """
-                select u.id_usuario, u.uuid_usuario, u.username, u.correo_acceso,
-                       u.estado, u.bloqueado, u.id_persona,
-                       p.documento_numero, p.primer_nombre, p.primer_apellido
-                from sira.seg_usuario u
-                join sira.per_persona p on p.id_persona=u.id_persona
-                order by u.id_usuario desc
-                """
-        );
-    }
-
-    @PostMapping
-    @Transactional
-    public Map<String, Object> crear(@Valid @RequestBody UsuarioRequest request) {
-        db.update(
-                """
-                insert into sira.seg_usuario (
-                    uuid_usuario, id_persona, username, password_hash,
-                    algoritmo_hash, correo_acceso, estado, bloqueado,
-                    requiere_cambio_password, intentos_fallidos
-                )
-                values (?, ?, ?, ?, 'BCRYPT', lower(?), 'ACTIVO', 'N', 'S', 0)
-                """,
-                UUID.randomUUID(),
-                request.personaId(),
-                request.username(),
-                passwordEncoder.encode(request.password()),
-                request.correoAcceso()
-        );
-
-        return Map.of("creado", true);
-    }
+import org.springframework.http.HttpStatus;import org.springframework.jdbc.core.JdbcTemplate;import org.springframework.security.crypto.password.PasswordEncoder;import org.springframework.transaction.annotation.Transactional;import org.springframework.web.bind.annotation.*;import org.springframework.web.server.ResponseStatusException;import java.util.*;
+@RestController @RequestMapping("/api/v1/usuarios")
+public class UsuarioController{
+ private final JdbcTemplate db;private final PasswordEncoder encoder;public UsuarioController(JdbcTemplate db,PasswordEncoder encoder){this.db=db;this.encoder=encoder;}
+ @GetMapping public List<Map<String,Object>> listar(){return db.queryForList("select u.id_usuario,u.uuid_usuario,u.username,u.correo_acceso,u.estado,u.bloqueado,u.requiere_cambio_password,u.id_persona,p.documento_numero,p.primer_nombre,p.primer_apellido from sira.seg_usuario u join sira.per_persona p on p.id_persona=u.id_persona order by u.id_usuario desc");}
+ @GetMapping("/catalogos/personas-sin-usuario") public List<Map<String,Object>> personas(){return db.queryForList("select p.id_persona,p.documento_numero,concat_ws(' ',p.primer_nombre,p.primer_apellido) nombre from sira.per_persona p where p.estado_registro='ACTIVO' and not exists(select 1 from sira.seg_usuario u where u.id_persona=p.id_persona) order by nombre");}
+ @GetMapping("/catalogos/roles") public List<Map<String,Object>> roles(){return db.queryForList("select id_rol,codigo,nombre,descripcion,es_sistema,activo from sira.seg_rol order by nombre");}
+ @GetMapping("/{id}") public Map<String,Object> uno(@PathVariable long id){Map<String,Object> x=db.queryForMap("select u.*,p.documento_numero,concat_ws(' ',p.primer_nombre,p.primer_apellido) persona from sira.seg_usuario u join sira.per_persona p on p.id_persona=u.id_persona where u.id_usuario=?",id);x.put("roles",db.queryForList("select r.id_rol,r.codigo,r.nombre,ur.activo from sira.seg_usuario_rol ur join sira.seg_rol r on r.id_rol=ur.id_rol where ur.id_usuario=?",id));return x;}
+ @PostMapping @Transactional public Map<String,Object> crear(@RequestBody UsuarioRequest r){if(r.password()==null||r.password().length()<8)throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"La contraseña debe tener al menos 8 caracteres");Long id=db.queryForObject("insert into sira.seg_usuario(id_persona,username,password_hash,algoritmo_hash,correo_acceso,estado,bloqueado,requiere_cambio_password,intentos_fallidos) values(?,?,?,'BCRYPT',lower(?),'ACTIVO','N','S',0) returning id_usuario",Long.class,r.personaId(),r.username(),encoder.encode(r.password()),r.correoAcceso());roles(id,r.roles());return Map.of("idUsuario",id);}
+ @PutMapping("/{id}") @Transactional public Map<String,Object> editar(@PathVariable long id,@RequestBody UsuarioRequest r){db.update("update sira.seg_usuario set username=?,correo_acceso=lower(?),estado=coalesce(?,estado),bloqueado=case when ? then 'S' else 'N' end,fecha_actualizacion=clock_timestamp() where id_usuario=?",r.username(),r.correoAcceso(),r.estado(),Boolean.TRUE.equals(r.bloqueado()),id);roles(id,r.roles());return Map.of("guardado",true);}
+ @PostMapping("/{id}/password") public Map<String,Object> password(@PathVariable long id,@RequestBody Map<String,Object> p){String x=String.valueOf(p.get("password"));if(x.length()<8)throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"La contraseña debe tener al menos 8 caracteres");db.update("update sira.seg_usuario set password_hash=?,algoritmo_hash='BCRYPT',requiere_cambio_password='S',fecha_ultimo_cambio_password=clock_timestamp(),fecha_actualizacion=clock_timestamp() where id_usuario=?",encoder.encode(x),id);return Map.of("guardado",true);}
+ @DeleteMapping("/{id}") @Transactional public Map<String,Object> eliminar(@PathVariable long id){Integer t=db.queryForObject("select count(*) from sira.seg_auditoria where id_usuario=?",Integer.class,id);Integer a=db.queryForObject("select count(*) from sira.seg_usuario_rol where asignado_por=?",Integer.class,id);if((t!=null&&t>0)||(a!=null&&a>0))throw new ResponseStatusException(HttpStatus.CONFLICT,"El usuario tiene trazas o asignaciones históricas y no puede eliminarse");db.update("delete from sira.seg_usuario_rol where id_usuario=?",id);db.update("delete from sira.seg_usuario where id_usuario=?",id);return Map.of("eliminado",true);}
+ @GetMapping("/roles") public List<Map<String,Object>> listaRoles(){return db.queryForList("select r.*,count(rp.id_permiso) permisos from sira.seg_rol r left join sira.seg_rol_permiso rp on rp.id_rol=r.id_rol and rp.concedido='S' group by r.id_rol order by r.nombre");}
+ @GetMapping("/roles/{id}/permisos") public Map<String,Object> permisos(@PathVariable long id){return Map.of("rol",db.queryForMap("select * from sira.seg_rol where id_rol=?",id),"permisos",db.queryForList("select p.*,case when rp.id_permiso is null then 'N' else 'S' end concedido from sira.seg_permiso p left join sira.seg_rol_permiso rp on rp.id_permiso=p.id_permiso and rp.id_rol=? and rp.concedido='S' order by p.modulo,p.recurso,p.accion",id));}
+ @PutMapping("/roles/{id}/permisos") @Transactional public Map<String,Object> permisos(@PathVariable long id,@RequestBody Map<String,Object> p){db.update("delete from sira.seg_rol_permiso where id_rol=?",id);Object raw=p.get("permisos");if(raw instanceof List<?> ls)for(Object x:ls)db.update("insert into sira.seg_rol_permiso(id_rol,id_permiso,concedido) values(?,?,'S')",id,Long.valueOf(String.valueOf(x)));return Map.of("guardado",true);}
+ private void roles(Long id,List<Long> rs){if(rs==null)return;db.update("update sira.seg_usuario_rol set activo='N',fecha_hasta=clock_timestamp() where id_usuario=? and activo='S'",id);for(Long r:rs)db.update("insert into sira.seg_usuario_rol(id_usuario,id_rol,activo) values(?,?,'S') on conflict(id_usuario,id_rol) do update set activo='S',fecha_desde=clock_timestamp(),fecha_hasta=null",id,r);}
 }

@@ -22,7 +22,19 @@ public class ResidenciaController {
    left join sira.codigo_postal cp on cp.id_codigo_postal=r.id_codigo_postal
    where r.id_persona=? and r.principal='S' and r.activo='S' limit 1
    """,personaId);
-  return rows.isEmpty()?Map.of("existe",false):new LinkedHashMap<>(){{put("existe",true);put("residencia",rows.get(0));}};
+  String ubi = "";
+  try {
+      var list = db.queryForList("select motivo_no_captura from sira.per_persona_geolocalizacion where id_persona=? and eliminada_usuario='N' order by id_geolocalizacion desc limit 1", personaId);
+      if(!list.isEmpty() && list.get(0).get("motivo_no_captura") != null){
+          ubi = String.valueOf(list.get(0).get("motivo_no_captura"));
+      }
+  } catch(Exception ignored){}
+  if(rows.isEmpty()){
+      return Map.of("existe",false,"ubicacion",ubi);
+  }
+  Map<String,Object> res = new LinkedHashMap<>(rows.get(0));
+  res.put("ubicacion", ubi);
+  return Map.of("existe",true,"residencia",res,"ubicacion",ubi);
  }
  @PutMapping("/principal") @Transactional
  public Map<String,Object> guardar(@PathVariable long personaId,@RequestBody Map<String,Object> p){
@@ -31,6 +43,13 @@ public class ResidenciaController {
    insert into sira.per_persona_residencia(id_persona,id_pais,id_estado,id_ciudad,id_municipio,id_parroquia,id_sector_geografico,id_codigo_postal,direccion_complementaria,principal,activo)
    values(?,?,?,?,?,?,?,?,?,'S','S') returning id_persona_residencia
    """,Long.class,personaId,num(p,"paisId"),num(p,"estadoId"),nullable(p.get("ciudadId")),num(p,"municipioId"),num(p,"parroquiaId"),nullable(p.get("sectorId")),nullable(p.get("codigoPostalId")),text(p.get("direccionComplementaria")));
+  String ubi = text(p.get("ubicacion"));
+  if(ubi != null && !ubi.isBlank()){
+      try {
+          db.update("update sira.per_persona_geolocalizacion set eliminada_usuario='S' where id_persona=? and eliminada_usuario='N'", personaId);
+          db.update("insert into sira.per_persona_geolocalizacion(id_persona, metodo, resultado_captura, motivo_no_captura, consentimiento, eliminada_usuario) values(?, 'MANUAL', 'NO_DISPONIBLE', ?, 'S', 'N')", personaId, ubi.trim());
+      } catch(Exception ignored){}
+  }
   if(nullable(p.get("sectorId"))!=null) db.update("update sira.per_persona set registro_fase1_completo='S' where id_persona=?",personaId);
   return Map.of("idPersonaResidencia",Objects.requireNonNull(id),"fase1Completa",nullable(p.get("sectorId"))!=null);
  }

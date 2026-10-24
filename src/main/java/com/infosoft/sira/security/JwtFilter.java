@@ -20,6 +20,7 @@ public class JwtFilter extends OncePerRequestFilter {
     protected boolean shouldNotFilter(HttpServletRequest req) {
         String p=req.getRequestURI();
         return "OPTIONS".equalsIgnoreCase(req.getMethod())
+            || "/api/v1/salud".equals(p)
             || p.startsWith("/api/v1/auth/")
             || p.startsWith("/api/v1/publico/")
             || p.startsWith("/v3/api-docs/")

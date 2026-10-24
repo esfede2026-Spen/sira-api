@@ -26,6 +26,23 @@ public class InvitacionController {
   return referidoId==null?db.queryForList(base+" order by i.id_invitacion desc"):db.queryForList(base+" where i.id_referido=? order by i.id_invitacion desc",referidoId);
  }
 
+ @GetMapping("/referentes")
+ public List<Map<String,Object>> referentes(){
+  List<Map<String,Object>> list = db.queryForList("""
+   select distinct p.id_persona, p.primer_nombre, p.segundo_nombre, p.primer_apellido, p.segundo_apellido, p.documento_numero
+   from sira.per_persona p
+   join sira.seg_usuario u on u.id_persona = p.id_persona and u.estado = 'ACTIVO'
+   join sira.seg_usuario_rol ur on ur.id_usuario = u.id_usuario and ur.activo = 'S'
+   join sira.seg_rol r on r.id_rol = ur.id_rol and r.activo = 'S'
+   where upper(r.codigo) in ('ROL_INVITADOR', 'INVITADOR')
+   order by p.primer_nombre, p.primer_apellido
+  """);
+  if(list.isEmpty()){
+   return db.queryForList("select id_persona, primer_nombre, segundo_nombre, primer_apellido, segundo_apellido, documento_numero from sira.per_persona where estado_registro='ACTIVO' order by primer_nombre, primer_apellido limit 20");
+  }
+  return list;
+ }
+
  @PostMapping @Transactional
  public Map<String,Object> crear(@RequestBody Map<String,Object> p){
   long referidoId=Long.parseLong(String.valueOf(p.get("referidoId")));

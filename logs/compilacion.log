@@ -1,5 +1,5 @@
 [INFO] Scanning for projects...
-[INFO] Loaded 24021 auto-discovered prefixes for remote repository central (prefixes-central.txt)
+[INFO] Loaded 24227 auto-discovered prefixes for remote repository central (prefixes-central.txt)
 [INFO] 
 [INFO] -----------------------< com.infosoft:sira-api >------------------------
 [INFO] Building sira-api 0.0.3-SNAPSHOT
@@ -16,8 +16,8 @@
 [INFO] --- compiler:3.15.0:compile (default-compile) @ sira-api ---
 [INFO] Loaded 74 auto-discovered prefixes for remote repository apache.snapshots (prefixes-apache.snapshots.txt)
 [INFO] Recompiling the module because of changed source code.
-[INFO] Compiling 24 source files with javac [debug parameters release 17] to target\classes
-[INFO] /C:/Proyectos/SIRA/sira-api/src/main/java/com/infosoft/sira/electoral/ElectoralController.java: C:\Proyectos\SIRA\sira-api\src\main\java\com\infosoft\sira\electoral\ElectoralController.java uses unchecked or unsafe operations.
+[INFO] Compiling 26 source files with javac [debug parameters release 17] to target\classes
+[INFO] /C:/Proyectos/SIRA/sira-api/src/main/java/com/infosoft/sira/electoral/ElectoralController.java: Some input files use unchecked or unsafe operations.
 [INFO] /C:/Proyectos/SIRA/sira-api/src/main/java/com/infosoft/sira/electoral/ElectoralController.java: Recompile with -Xlint:unchecked for details.
 [INFO] 
 [INFO] --- resources:3.5.0:testResources (default-testResources) @ sira-api ---
@@ -39,6 +39,6 @@
 [INFO] ------------------------------------------------------------------------
 [INFO] BUILD SUCCESS
 [INFO] ------------------------------------------------------------------------
-[INFO] Total time:  3.548 s
-[INFO] Finished at: 2026-10-07T21:20:11-04:00
+[INFO] Total time:  3.490 s
+[INFO] Finished at: 2026-10-24T15:39:05-04:00
 [INFO] ------------------------------------------------------------------------

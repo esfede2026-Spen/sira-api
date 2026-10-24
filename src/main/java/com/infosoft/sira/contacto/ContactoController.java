@@ -11,7 +11,11 @@ import java.util.*;
 @RequestMapping("/api/v1/personas/{personaId}/contactos")
 public class ContactoController {
     private final JdbcTemplate db;
-    public ContactoController(JdbcTemplate db){this.db=db;}
+    private final CodigoTelefonicoService codigoService;
+    public ContactoController(JdbcTemplate db, CodigoTelefonicoService codigoService){
+        this.db = db;
+        this.codigoService = codigoService;
+    }
 
     @GetMapping
     public Map<String,Object> consultar(@PathVariable long personaId){
@@ -42,9 +46,23 @@ public class ContactoController {
 
     @PostMapping("/telefono") @Transactional
     public Map<String,Object> telefono(@PathVariable long personaId,@RequestBody Map<String,Object> p){
-        long tipo=num(p,"tipoContactoId"),codigo=num(p,"codigoTelefonicoId");
+        long tipo=num(p,"tipoContactoId");
+        Long codigo = null;
+        if(p.get("codigoTelefonicoId") != null && !String.valueOf(p.get("codigoTelefonicoId")).isBlank() && !"0".equals(String.valueOf(p.get("codigoTelefonicoId")))) {
+            codigo = Long.parseLong(String.valueOf(p.get("codigoTelefonicoId")));
+        }
+        if (codigo == null && p.get("codigoArea") != null && !String.valueOf(p.get("codigoArea")).isBlank()) {
+            codigo = codigoService.resolverOCrear(String.valueOf(p.getOrDefault("codigoPais", "+58")), String.valueOf(p.get("codigoArea")));
+        }
+        if (codigo == null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Código telefónico o de área requerido");
+
         String numero=req(p,"numero").replaceAll("[^0-9]","");
-        if(!numero.matches("\\d{7}")) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"El número debe contener exactamente 7 dígitos");
+        String pais = String.valueOf(p.getOrDefault("codigoPais", "+58")).trim();
+        if ("+58".equals(pais) || pais.isBlank()) {
+            if(!numero.matches("\\d{7}")) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"El número debe contener exactamente 7 dígitos");
+        } else {
+            if(!numero.matches("\\d{6,12}")) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"El número internacional debe contener entre 6 y 12 dígitos");
+        }
         boolean principal=bool(p.get("principal"));
         if(principal) db.update("update sira.per_persona_telefono set principal='N' where id_persona=?",personaId);
         Long id=db.queryForObject("""

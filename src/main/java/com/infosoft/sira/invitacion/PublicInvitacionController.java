@@ -43,27 +43,16 @@ public class PublicInvitacionController {
 
  @GetMapping("/paises-telefono")
  public List<Map<String,Object>> paisesTelefono(){
-  List<Map<String,Object>> list = new ArrayList<>(db.queryForList("""
-      select distinct on (c.codigo_pais)
-             c.id_codigo_telefonico,
-             c.codigo_pais,
-             coalesce(p.desc_pais, c.codigo_pais) as desc_pais,
-             coalesce(p.codigo_iso2, '') as codigo_iso2
-        from sira.cat_codigo_telefonico c
-        left join sira.pais p on p.id_pais = c.id_pais
-       where c.activo = 'S'
-       order by c.codigo_pais, c.id_codigo_telefonico
-  """));
-  list.sort((a, b) -> {
-      String pA = String.valueOf(a.get("codigo_pais"));
-      String pB = String.valueOf(b.get("codigo_pais"));
-      if ("+58".equals(pA)) return -1;
-      if ("+58".equals(pB)) return 1;
-      String nA = String.valueOf(a.get("desc_pais"));
-      String nB = String.valueOf(b.get("desc_pais"));
-      return nA.compareToIgnoreCase(nB);
-  });
-  return list;
+  return db.queryForList("""
+      select id_codigo_telefonico,
+             codigo_pais,
+             descripcion,
+             descripcion as desc_pais
+        from sira.cat_codigo_telefonico
+       where activo = 'S'
+         and tipo_linea = 'CODIGOPAIS'
+       order by descripcion asc
+  """);
  }
 
  @PostMapping("/codigos-telefonicos/resolver") public Map<String,Object> resolver(@RequestBody Map<String,Object> p){

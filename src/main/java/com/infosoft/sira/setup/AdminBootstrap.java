@@ -50,6 +50,34 @@ public class AdminBootstrap implements ApplicationRunner {
         }
 
         try {
+            db.execute("""
+                do $$
+                declare
+                    r record;
+                    max_id bigint;
+                begin
+                    for r in
+                        select s.relname as seq, t.relname as tbl, a.attname as col
+                        from pg_class s
+                        join pg_depend d on d.objid = s.oid and d.classid = 'pg_class'::regclass and d.refclassid = 'pg_class'::regclass
+                        join pg_class t on t.oid = d.refobjid
+                        join pg_attribute a on a.attrelid = t.oid and a.attnum = d.refobjsubid
+                        join pg_namespace n on n.oid = s.relnamespace
+                        where n.nspname = 'sira' and s.relkind = 'S'
+                    loop
+                        execute format('select coalesce(max(%I), 0) from sira.%I', r.col, r.tbl) into max_id;
+                        if max_id > 0 then
+                            execute format('select setval(''sira.%I'', %s, true)', r.seq, max_id);
+                        end if;
+                    end loop;
+                end $$;
+            """);
+            log.info("Secuencias de PostgreSQL en esquema sira sincronizadas exitosamente.");
+        } catch (Exception ex) {
+            log.warn("Aviso al sincronizar secuencias en bootstrap: {}", ex.getMessage());
+        }
+
+        try {
             // Asegurar creación del rol ROL_INVITADOR
             Integer tieneRol = db.queryForObject("select count(*) from sira.seg_rol where upper(codigo) in ('ROL_INVITADOR', 'INVITADOR')", Integer.class);
             Long rolInvitadorId;

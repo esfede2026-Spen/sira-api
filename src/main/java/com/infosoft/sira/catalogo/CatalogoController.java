@@ -8,4 +8,27 @@ public class CatalogoController {
  @GetMapping("/sexos") public List<Map<String,Object>> sexos(){return db.queryForList("select id_sexo,codigo,descripcion from sira.cat_sexo where activo='S' order by descripcion");}
  @GetMapping("/tipos-contacto") public List<Map<String,Object>> tiposContacto(){return db.queryForList("select id_tipo_contacto,codigo,descripcion,permite_otp from sira.cat_tipo_contacto where activo='S' order by id_tipo_contacto");}
  @GetMapping("/codigos-telefonicos") public List<Map<String,Object>> codigos(){return db.queryForList("select id_codigo_telefonico,id_pais,codigo_pais,codigo_area_operador,descripcion,tipo_linea from sira.cat_codigo_telefonico where activo='S' order by codigo_pais,codigo_area_operador");}
+ @GetMapping("/paises-telefono") public List<Map<String,Object>> paisesTelefono(){
+  List<Map<String,Object>> list = new ArrayList<>(db.queryForList("""
+      select distinct on (c.codigo_pais)
+             c.id_codigo_telefonico,
+             c.codigo_pais,
+             coalesce(p.desc_pais, c.codigo_pais) as desc_pais,
+             coalesce(p.codigo_iso2, '') as codigo_iso2
+        from sira.cat_codigo_telefonico c
+        left join sira.pais p on p.id_pais = c.id_pais
+       where c.activo = 'S'
+       order by c.codigo_pais, c.id_codigo_telefonico
+  """));
+  list.sort((a, b) -> {
+      String pA = String.valueOf(a.get("codigo_pais"));
+      String pB = String.valueOf(b.get("codigo_pais"));
+      if ("+58".equals(pA)) return -1;
+      if ("+58".equals(pB)) return 1;
+      String nA = String.valueOf(a.get("desc_pais"));
+      String nB = String.valueOf(b.get("desc_pais"));
+      return nA.compareToIgnoreCase(nB);
+  });
+  return list;
+ }
 }

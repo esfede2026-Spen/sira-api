@@ -43,6 +43,9 @@ public class CodigoTelefonicoService {
         }
         String aConCero = a.startsWith("0") ? a : ("0" + a);
         String aSinCero = a.replaceAll("^0+", "");
+        if (aSinCero.length() != 3) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "El código de área debe tener exactamente 3 dígitos");
+        }
 
         List<Map<String, Object>> rows = db.queryForList("""
             select id_codigo_telefonico

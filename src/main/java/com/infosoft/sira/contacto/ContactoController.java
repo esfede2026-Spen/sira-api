@@ -57,12 +57,7 @@ public class ContactoController {
         if (codigo == null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Código telefónico o de área requerido");
 
         String numero=req(p,"numero").replaceAll("[^0-9]","");
-        String pais = String.valueOf(p.getOrDefault("codigoPais", "+58")).trim();
-        if ("+58".equals(pais) || pais.isBlank()) {
-            if(!numero.matches("\\d{7}")) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"El número debe contener exactamente 7 dígitos");
-        } else {
-            if(!numero.matches("\\d{6,12}")) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"El número internacional debe contener entre 6 y 12 dígitos");
-        }
+        if(!numero.matches("\\d{7}")) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"El número debe contener exactamente 7 dígitos");
         boolean principal=bool(p.get("principal"));
         if(principal) db.update("update sira.per_persona_telefono set principal='N' where id_persona=?",personaId);
         Long id=db.queryForObject("""

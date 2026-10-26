@@ -67,21 +67,37 @@ public class PublicInvitacionController {
 
  @GetMapping("/tipos-contacto") public List<Map<String,Object>> tipos(){return db.queryForList("select id_tipo_contacto,codigo,descripcion,permite_otp from sira.cat_tipo_contacto where activo='S' order by id_tipo_contacto");}
 
- @GetMapping("/catalogos/titulos") public List<Map<String,Object>> titulos(){return db.queryForList("select id_titulo,descripcion from sira.cat_titulo_academico where activo='S' order by descripcion");}
+ @GetMapping("/catalogos/titulos") public List<Map<String,Object>> titulos(){return db.queryForList("select id_titulo,descripcion from sira.cat_titulo_academico where activo='S' order by id_titulo");}
 
- @GetMapping("/catalogos/nacionalidades") public List<Map<String,Object>> nacionalidades(){return db.queryForList("select id_nacionalidad_catalogo,descripcion from sira.cat_nacionalidad where activo='S' order by descripcion");}
+ @GetMapping("/catalogos/nacionalidades") public List<Map<String,Object>> nacionalidades(){return db.queryForList("select id_nacionalidad_catalogo,descripcion from sira.cat_nacionalidad where activo='S' order by case when codigo='VE' then 0 else 1 end, descripcion");}
 
  @GetMapping("/catalogos/sexos") public List<Map<String,Object>> sexos(){return db.queryForList("select id_sexo,descripcion from sira.cat_sexo where activo='S' order by descripcion");}
 
  @GetMapping("/catalogos/honores") public List<Map<String,Object>> honores(){return db.queryForList("select id_honor,descripcion from sira.cat_honor_academico where activo='S' order by descripcion");}
 
- @GetMapping("/catalogos/disponibilidades") public List<Map<String,Object>> disponibilidades(){return db.queryForList("select id_disponibilidad,descripcion from sira.cat_disponibilidad where activo='S' order by descripcion");}
+ @GetMapping("/catalogos/disponibilidades") public List<Map<String,Object>> disponibilidades(){return db.queryForList("select id_disponibilidad,descripcion from sira.cat_disponibilidad where activo='S' order by case when descripcion = 'Por proyecto' then 1 when descripcion = 'Tiempo parcial' then 2 when descripcion = 'Tiempo completo' then 3 when descripcion = 'No disponible' then 4 when descripcion = 'Otra' then 5 else 99 end");}
 
- @GetMapping("/catalogos/niveles") public List<Map<String,Object>> niveles(){return db.queryForList("select id_nivel,descripcion from sira.cat_nivel_educativo where activo='S' order by descripcion");}
+ @GetMapping("/catalogos/niveles") public List<Map<String,Object>> niveles(){return db.queryForList("select id_nivel,descripcion from sira.cat_nivel_educativo where activo='S' order by case when descripcion like '%ISCED 0%' then 0 when descripcion like '%ISCED 1%' then 1 when descripcion like '%ISCED 2%' then 2 when descripcion like '%ISCED 3%' then 3 when descripcion like '%ISCED 4%' then 4 when descripcion like '%ISCED 5%' then 5 when descripcion like '%ISCED 6%' then 6 when descripcion like '%ISCED 7%' then 7 when descripcion like '%ISCED 8%' then 8 when descripcion like '%ISCED 9%' then 9 else id_nivel end asc");}
 
- @GetMapping("/catalogos/especialidades") public List<Map<String,Object>> especialidades(){return db.queryForList("select id_especialidad,descripcion from sira.cat_especialidad where activo='S' order by descripcion");}
+ @GetMapping("/catalogos/especialidades") public List<Map<String,Object>> especialidades(@RequestParam(required=false) Long tituloId){
+     var list = db.queryForList("select id_especialidad,descripcion from sira.cat_especialidad where activo='S' order by descripcion");
+     List<Map<String, Object>> res = new ArrayList<>();
+     for (var row : list) {
+         Map<String, Object> m = new HashMap<>(row);
+         Long espId = ((Number) row.get("id_especialidad")).longValue();
+         List<Long> compatibles = new ArrayList<>();
+         for (var entry : com.infosoft.sira.catalogo.CatalogoV4Controller.ESP_POR_TITULO.entrySet()) {
+             if (entry.getValue().contains(espId)) compatibles.add(entry.getKey());
+         }
+         m.put("titulosCompatibles", compatibles);
+         if (tituloId == null || compatibles.contains(tituloId)) {
+             res.add(m);
+         }
+     }
+     return res;
+ }
 
- @GetMapping("/catalogos/modalidades") public List<Map<String,Object>> modalidades(){return db.queryForList("select id_modalidad,descripcion from sira.cat_modalidad where activo='S' order by descripcion");}
+ @GetMapping("/catalogos/modalidades") public List<Map<String,Object>> modalidades(){return db.queryForList("select id_modalidad,descripcion from sira.cat_modalidad where activo='S' order by case when descripcion = 'Presencial' then 1 when descripcion = 'Remota' then 2 when descripcion = 'Híbrida' then 3 when descripcion = 'Otra' then 4 else 99 end");}
 
  @GetMapping("/geografia/paises") public List<Map<String,Object>> paises(){return db.queryForList("select id_pais,desc_pais from sira.pais where activo='S' order by desc_pais");}
 
@@ -640,7 +656,16 @@ public class PublicInvitacionController {
 
   o.put("ubicacionReferencia",ubi);
 
-  o.put("academico",one("select * from sira.per_persona_datos_academicos where id_persona=?",pid));
+  Map<String, Object> acad = one("select * from sira.per_persona_datos_academicos where id_persona=?", pid);
+  if (!acad.isEmpty()) {
+      acad = new HashMap<>(acad);
+      String obs = text(acad.get("observacion"));
+      List<Map<String, Object>> estudios = parseEstudiosPublico(obs, acad);
+      enrichEstudiosPublico(estudios);
+      acad.put("estudios", estudios);
+      acad.put("observacion", cleanObservacionPublico(obs));
+  }
+  o.put("academico", acad);
 
   o.put("electoral",electoral.actual(pid));
 
@@ -752,38 +777,77 @@ public class PublicInvitacionController {
 
   Long t2=nullable(x.get("titulo2Id")!=null?x.get("titulo2Id"):x.get("id_titulo_2"));
 
+  String tit2 = text(x.get("institucion") != null ? x.get("institucion") : (x.get("titulo2") != null ? x.get("titulo2") : x.get("titulo_2")));
+
+  List<Map<String, Object>> estudios = null;
+  if (x.get("estudios") instanceof List<?>) {
+      estudios = (List<Map<String, Object>>) x.get("estudios");
+  } else {
+      var r = db.queryForList("select observacion, id_titulo_1, id_especialidad, titulo_2, descripcion_magister from sira.per_persona_datos_academicos where id_persona=?", pid);
+      if (!r.isEmpty()) estudios = parseEstudiosPublico(text(r.get(0).get("observacion")), r.get(0));
+  }
+
+  if (estudios != null && !estudios.isEmpty()) {
+      var prim = estudios.get(0);
+      if (t1 == null) t1 = nullable(prim.get("tituloId"));
+      if (x.get("especialidadId") == null) x.put("especialidadId", prim.get("especialidadId"));
+      if (tit2.isBlank()) tit2 = text(prim.get("institucion"));
+      if (descMag.isBlank()) descMag = text(prim.get("anioGraduacion"));
+  }
+
   String tit1=text(x.get("titulo"));
-
-  String tit2=text(x.get("titulo2"));
-
   if(tit1.isBlank()&&t1!=null){
-
     var r=db.queryForList("select descripcion from sira.cat_titulo_academico where id_titulo=?",t1);
-
     if(!r.isEmpty())tit1=String.valueOf(r.get(0).get("descripcion"));
-
   }
-
   if(tit2.isBlank()&&t2!=null){
-
     var r=db.queryForList("select descripcion from sira.cat_titulo_academico where id_titulo=?",t2);
-
     if(!r.isEmpty())tit2=String.valueOf(r.get(0).get("descripcion"));
-
   }
+
+  String obsUser = text(x.get("observacion"));
+  String obsFinal = buildObservacionWithEstudiosPublico(obsUser, estudios);
 
   db.update("""
-
     insert into sira.per_persona_datos_academicos(id_persona,id_nivel,id_especialidad,titulo,postgrado,descripcion_postgrado,doctorado,descripcion_doctorado,magister,descripcion_magister,id_honor,ocupacion_1,ocupacion_2,ocupacion_3,id_disponibilidad,id_modalidad,whatsapp,facebook,instagram,youtube,x_twitter,observacion,fecha_actualizacion,usuario_actualizacion,titulo_2,id_especialidad_2,id_titulo_1,id_titulo_2)
-
     values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,clock_timestamp(),'PUBLICO_INVITACION',?,?,?,?)
-
     on conflict(id_persona) do update set id_nivel=excluded.id_nivel,id_especialidad=excluded.id_especialidad,titulo=excluded.titulo,postgrado=excluded.postgrado,descripcion_postgrado=excluded.descripcion_postgrado,doctorado=excluded.doctorado,descripcion_doctorado=excluded.descripcion_doctorado,magister=excluded.magister,descripcion_magister=excluded.descripcion_magister,id_honor=excluded.id_honor,ocupacion_1=excluded.ocupacion_1,ocupacion_2=excluded.ocupacion_2,ocupacion_3=excluded.ocupacion_3,id_disponibilidad=excluded.id_disponibilidad,id_modalidad=excluded.id_modalidad,whatsapp=excluded.whatsapp,facebook=excluded.facebook,instagram=excluded.instagram,youtube=excluded.youtube,x_twitter=excluded.x_twitter,observacion=excluded.observacion,fecha_actualizacion=clock_timestamp(),usuario_actualizacion='PUBLICO_INVITACION',titulo_2=excluded.titulo_2,id_especialidad_2=excluded.id_especialidad_2,id_titulo_1=excluded.id_titulo_1,id_titulo_2=excluded.id_titulo_2
-
-  """,pid,nullable(x.get("nivelId")),nullable(x.get("especialidadId")),tit1,postVal,descPost,docVal,descDoc,magVal,descMag,nullable(x.get("honorId")),text(x.get("ocupacion1")),text(x.get("ocupacion2")),text(x.get("ocupacion3")),nullable(x.get("disponibilidadId")),nullable(x.get("modalidadId")),text(x.get("whatsapp")),text(x.get("facebook")),text(x.get("instagram")),text(x.get("youtube")),text(x.get("xTwitter")),text(x.get("observacion")),tit2,nullable(x.get("especialidad2Id")),t1,t2);
-
+  """,pid,nullable(x.get("nivelId")),nullable(x.get("especialidadId")),tit1,postVal,descPost,docVal,descDoc,magVal,descMag,nullable(x.get("honorId")),text(x.get("ocupacion1")),text(x.get("ocupacion2")),text(x.get("ocupacion3")),nullable(x.get("disponibilidadId")),nullable(x.get("modalidadId")),text(x.get("whatsapp")),text(x.get("facebook")),text(x.get("instagram")),text(x.get("youtube")),text(x.get("xTwitter")),obsFinal,tit2,nullable(x.get("especialidad2Id")),t1,t2);
   return ok();
+ }
 
+ @PostMapping("/{token}/academico/estudios")
+ public Map<String, Object> agregarEstudioPublico(@PathVariable String token, @RequestParam long usoId, @RequestBody Map<String, Object> nuevo) {
+     long pid = personaUso(token, usoId);
+     var r = db.queryForList("select * from sira.per_persona_datos_academicos where id_persona=?", pid);
+     Map<String, Object> m = r.isEmpty() ? new HashMap<>() : new HashMap<>(r.get(0));
+     String obs = text(m.get("observacion"));
+     List<Map<String, Object>> estudios = parseEstudiosPublico(obs, m);
+     Map<String, Object> est = new HashMap<>();
+     est.put("tituloId", nullable(nuevo.get("tituloId") != null ? nuevo.get("tituloId") : nuevo.get("titulo1Id")));
+     est.put("especialidadId", nullable(nuevo.get("especialidadId")));
+     est.put("institucion", text(nuevo.get("institucion")));
+     est.put("anioGraduacion", text(nuevo.get("anioGraduacion")));
+     estudios.add(est);
+     saveEstudiosPublico(pid, m, estudios, cleanObservacionPublico(obs));
+     enrichEstudiosPublico(estudios);
+     return Map.of("guardado", true, "estudios", estudios);
+ }
+
+ @DeleteMapping("/{token}/academico/estudios/{idx}")
+ public Map<String, Object> eliminarEstudioPublico(@PathVariable String token, @RequestParam long usoId, @PathVariable int idx) {
+     long pid = personaUso(token, usoId);
+     var r = db.queryForList("select * from sira.per_persona_datos_academicos where id_persona=?", pid);
+     if (!r.isEmpty()) {
+         Map<String, Object> m = new HashMap<>(r.get(0));
+         String obs = text(m.get("observacion"));
+         List<Map<String, Object>> estudios = parseEstudiosPublico(obs, m);
+         if (idx >= 0 && idx < estudios.size()) {
+             estudios.remove(idx);
+             saveEstudiosPublico(pid, m, estudios, cleanObservacionPublico(obs));
+         }
+     }
+     return Map.of("eliminado", true);
  }
 
  @PostMapping("/{token}/grupos/{gid}") public Map<String,Object> grupo(@PathVariable String token,@RequestParam long usoId,@PathVariable long gid){long pid=personaUso(token,usoId);db.update("insert into sira.per_persona_grupo(id_persona,id_grupo) values(?,?) on conflict(id_persona,id_grupo) do update set activo='S',fecha_hasta=null",pid,gid);return ok();}
@@ -1077,5 +1141,128 @@ public class PublicInvitacionController {
 
  private Map<String,Object> one(String q,long p){var r=db.queryForList(q,p);return r.isEmpty()?Map.of():r.get(0);}private Map<String,Object> ok(){return Map.of("guardado",true);}private void bad(String x){throw new ResponseStatusException(HttpStatus.BAD_REQUEST,x);}private long num(Object x){return Long.parseLong(String.valueOf(x));}private Long nullable(Object x){try{String s=String.valueOf(x);return s.isBlank()||"None".equals(s)?null:Long.valueOf(s);}catch(Exception e){return null;}}private String text(Object x){return x==null?"":String.valueOf(x).trim();}private String digits(Object x){return text(x).replaceAll("\\D","");}private String up(Object x){String s=text(x);return s.isBlank()?null:s.toUpperCase();}private String yn(Object x){return Boolean.TRUE.equals(x)?"S":"N";}
 
-}
+  private static final com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+  private static final String TAG_PREFIX = "<!--ESTUDIOS_JSON:";
+  private static final String TAG_SUFFIX = ":ESTUDIOS_JSON-->";
 
+  private void saveEstudiosPublico(long personaId, Map<String, Object> current, List<Map<String, Object>> estudios, String cleanObs) {
+      String obsFinal = buildObservacionWithEstudiosPublico(cleanObs, estudios);
+      Long t1 = null, e1 = null;
+      String inst1 = "", anio1 = "";
+      if (!estudios.isEmpty()) {
+          var prim = estudios.get(0);
+          t1 = nullable(prim.get("tituloId"));
+          e1 = nullable(prim.get("especialidadId"));
+          inst1 = text(prim.get("institucion"));
+          anio1 = text(prim.get("anioGraduacion"));
+      }
+      Long t2 = estudios.size() > 1 ? nullable(estudios.get(1).get("tituloId")) : null;
+      Long e2 = estudios.size() > 1 ? nullable(estudios.get(1).get("especialidadId")) : null;
+      String tit1 = "";
+      if (t1 != null) {
+          var r = db.queryForList("select descripcion from sira.cat_titulo_academico where id_titulo=?", t1);
+          if (!r.isEmpty()) tit1 = String.valueOf(r.get(0).get("descripcion"));
+      }
+      db.update("""
+          insert into sira.per_persona_datos_academicos(id_persona,id_titulo_1,id_especialidad,id_titulo_2,id_especialidad_2,titulo,titulo_2,descripcion_magister,observacion,fecha_actualizacion,usuario_actualizacion)
+          values(?,?,?,?,?,?,?,?,?,clock_timestamp(),'PUBLICO_INVITACION')
+          on conflict(id_persona) do update set id_titulo_1=excluded.id_titulo_1,id_especialidad=excluded.id_especialidad,id_titulo_2=excluded.id_titulo_2,id_especialidad_2=excluded.id_especialidad_2,titulo=excluded.titulo,titulo_2=excluded.titulo_2,descripcion_magister=excluded.descripcion_magister,observacion=excluded.observacion,fecha_actualizacion=clock_timestamp(),usuario_actualizacion='PUBLICO_INVITACION'
+      """, personaId, t1, e1, t2, e2, tit1, inst1, anio1, obsFinal);
+  }
+
+  private List<Map<String, Object>> parseEstudiosPublico(String obs, Map<String, Object> row) {
+      List<Map<String, Object>> list = new ArrayList<>();
+      if (obs != null) {
+          String json = null;
+          if (obs.contains(TAG_PREFIX) && obs.contains(TAG_SUFFIX)) {
+              int start = obs.indexOf(TAG_PREFIX) + TAG_PREFIX.length();
+              int end = obs.indexOf(TAG_SUFFIX, start);
+              if (end > start) json = obs.substring(start, end).trim();
+          } else if (obs.contains("[ESTUDIOS_JSON:") && obs.contains("]")) {
+              int start = obs.indexOf("[ESTUDIOS_JSON:") + "[ESTUDIOS_JSON:".length();
+              int end = obs.lastIndexOf("]");
+              if (end > start) json = obs.substring(start, end).trim();
+          }
+          if (json != null && !json.isBlank()) {
+              try {
+                  List<?> parsed = mapper.readValue(json, List.class);
+                  for (Object item : parsed) {
+                      if (item instanceof Map<?, ?> m) {
+                          Map<String, Object> casted = new HashMap<>();
+                          for (var e : m.entrySet()) casted.put(String.valueOf(e.getKey()), e.getValue());
+                          list.add(casted);
+                      }
+                  }
+                  if (!list.isEmpty()) return list;
+              } catch (Exception ignored) {}
+          }
+      }
+      Long t1 = row.get("id_titulo_1") != null ? nullable(row.get("id_titulo_1")) : null;
+      Long e1 = row.get("id_especialidad") != null ? nullable(row.get("id_especialidad")) : null;
+      String inst1 = text(row.get("titulo_2"));
+      String anio1 = text(row.get("descripcion_magister"));
+      if (t1 != null || e1 != null || (!inst1.isBlank())) {
+          Map<String, Object> est = new HashMap<>();
+          est.put("tituloId", t1);
+          est.put("especialidadId", e1);
+          est.put("institucion", inst1);
+          est.put("anioGraduacion", anio1);
+          list.add(est);
+      }
+      return list;
+  }
+
+  private void enrichEstudiosPublico(List<Map<String, Object>> estudios) {
+      for (int i = 0; i < estudios.size(); i++) {
+          var est = estudios.get(i);
+          est.put("idx", i);
+          Long tid = nullable(est.get("tituloId"));
+          if (tid != null && !est.containsKey("titulo")) {
+              var q = db.queryForList("select descripcion from sira.cat_titulo_academico where id_titulo = ?", tid);
+              if (!q.isEmpty()) est.put("titulo", q.get(0).get("descripcion"));
+          }
+          Long eid = nullable(est.get("especialidadId"));
+          if (eid != null && !est.containsKey("especialidad")) {
+              var q = db.queryForList("select descripcion from sira.cat_especialidad where id_especialidad = ?", eid);
+              if (!q.isEmpty()) est.put("especialidad", q.get(0).get("descripcion"));
+          }
+      }
+  }
+
+  private String cleanObservacionPublico(String obs) {
+      if (obs == null) return "";
+      String s = obs;
+      if (s.contains(TAG_PREFIX) && s.contains(TAG_SUFFIX)) {
+          int start = s.indexOf(TAG_PREFIX);
+          int end = s.indexOf(TAG_SUFFIX, start) + TAG_SUFFIX.length();
+          s = s.substring(0, start) + s.substring(end);
+      }
+      if (s.contains("[ESTUDIOS_JSON:") && s.contains("]")) {
+          int start = s.indexOf("[ESTUDIOS_JSON:");
+          int end = s.lastIndexOf("]") + 1;
+          s = s.substring(0, start) + s.substring(end);
+      }
+      return s.trim();
+  }
+
+  private String buildObservacionWithEstudiosPublico(String cleanObs, List<Map<String, Object>> estudios) {
+      String clean = cleanObs != null ? cleanObservacionPublico(cleanObs) : "";
+      if (estudios == null || estudios.isEmpty()) return clean;
+      try {
+          List<Map<String, Object>> compact = new ArrayList<>();
+          for (var est : estudios) {
+              Map<String, Object> c = new HashMap<>();
+              c.put("tituloId", nullable(est.get("tituloId")));
+              c.put("especialidadId", nullable(est.get("especialidadId")));
+              c.put("institucion", text(est.get("institucion")));
+              c.put("anioGraduacion", text(est.get("anioGraduacion")));
+              compact.add(c);
+          }
+          String json = mapper.writeValueAsString(compact);
+          return TAG_PREFIX + json + TAG_SUFFIX + (clean.isBlank() ? "" : " " + clean);
+      } catch (Exception e) {
+          return clean;
+      }
+  }
+
+}
